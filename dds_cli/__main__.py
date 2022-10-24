@@ -26,6 +26,7 @@ import dds_cli
 import dds_cli.account_manager
 import dds_cli.unit_manager
 import dds_cli.motd_manager
+import dds_cli.maintenance_manager
 import dds_cli.data_getter
 import dds_cli.data_lister
 import dds_cli.data_putter
@@ -46,6 +47,7 @@ from dds_cli.options import (
     source_option,
     source_path_file_option,
     token_path_option,
+    username_option,
     break_on_fail_flag,
     json_flag,
     nomail_flag,
@@ -86,10 +88,17 @@ dds_cli.utils.stderr_console.print(
     "\n[green] ︶  (  ) ) ([/]    [blue][link={0}]{0}/[/link]".format(
         dds_url[: dds_url.index("/", 8)]
     ),
-    f"\n[green]      ︶ (  )[/]    [dim]Version {dds_cli.__version__}",
+    f"\n[green]      ︶ (  )[/]    [dim]CLI Version {dds_cli.__version__}",
     "\n[green]          ︶",
     highlight=False,
 )
+
+if len(sys.argv) == 1 or (len(sys.argv) > 1 and sys.argv[1] != "motd"):
+    motds = dds_cli.motd_manager.MotdManager.list_all_active_motds(table=False)
+    if motds:
+        dds_cli.utils.stderr_console.print(f"[bold]Important information:[/bold]")
+        for motd in motds:
+            dds_cli.utils.stderr_console.print(f"{motd['Created']} - {motd['Message']} \n")
 
 # -- dds -- #
 @click.group()
@@ -182,14 +191,21 @@ def dds_main(click_ctx, verbose, log_file, no_prompt, token_path):
 @tree_flag(help_message="Display the entire project(s) directory tree.")
 @usage_flag(help_message="Show the usage for available projects, in GBHours and cost.")
 @users_flag(help_message="Display users associated with a project(Requires a project id).")
-@click.option("--projects", "-lp", is_flag=True, help="List all project connected to your account.")
+@click.option(
+    "--projects", "-lp", is_flag=True, help="List all active projects connected to your account."
+)
+@click.option(
+    "--show-all",
+    is_flag=True,
+    help="List all projects connected to your account (including inactive).",
+)
 @click.pass_obj
 def list_projects_and_contents(
-    click_ctx, project, folder, sort, json, size, tree, usage, binary, users, projects
+    click_ctx, project, folder, sort, json, size, tree, usage, binary, users, projects, show_all
 ):
-    """List the projects you have access to or the project contents.
+    """List the active projects you have access to or the project contents.
 
-    To list all projects, run `dds ls` without any arguments, or use the `--projects` flag.
+    To list all active projects, run `dds ls` without any arguments, or use the `--projects` flag.
 
     Specify a Project ID to list the files within a project.
     You can also follow this with a subfolder path to show files within that folder.
@@ -205,7 +221,7 @@ def list_projects_and_contents(
                 token_path=click_ctx.get("TOKEN_PATH"),
                 binary=binary,
             ) as lister:
-                projects = lister.list_projects(sort_by=sort)
+                projects = lister.list_projects(sort_by=sort, show_all=show_all)
                 if json:
                     dds_cli.utils.console.print_json(data=projects)
                 else:
@@ -345,20 +361,34 @@ def auth_group_command(_):
     default=None,
     help="2FA authentication via authentication app. Default is to use one-time authentication code via mail.",
 )
+@click.option(
+    "--allow-group",
+    is_flag=True,
+    required=False,
+    default=False,
+    help="[Not recommended, use with care] Allow read permissions to group. Sets 640 permission instead of 600.",
+)
 @click.pass_obj
-def login(click_ctx, totp):
+def login(click_ctx, totp, allow_group):
     """Start or renew an authenticated session.
 
     Creates or renews the authentication token stored in the '.dds_cli_token' file.
 
     Run this command before running the cli in a non-interactive fashion as this enables the longest
     possible session time before a password needs to be entered again.
+
+    The permissions of tokens cannot be changed after the tokens are established.
+    If you began an authenticated session without the use of the --allow-group option,
+    but want to use it in a new session, use 'dds auth logout' to end the current session.
+    Then use the --allow-group option and start a new session. This also applies to the reverse.
     """
     no_prompt = click_ctx.get("NO_PROMPT", False)
     if no_prompt:
         LOG.warning("The --no-prompt flag is ignored for `dds auth login`")
     try:
-        with dds_cli.auth.Auth(token_path=click_ctx.get("TOKEN_PATH"), totp=totp):
+        with dds_cli.auth.Auth(
+            token_path=click_ctx.get("TOKEN_PATH"), totp=totp, allow_group=allow_group
+        ):
             # Authentication token renewed in the init method.
             LOG.info("[green] :white_check_mark: Authentication token created![/green]")
     except (
@@ -412,12 +442,27 @@ def info(click_ctx):
         sys.exit(1)
 
 
-@auth_group_command.command(name="twofactor")
-def twofactor():
+# ************************************************************************************************ #
+# AUTH SUB GROUPS **************************************************************** AUTH SUB GROUPS #
+# ************************************************************************************************ #
+
+
+# TWOFACTOR ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ TWOFACTOR #
+
+
+@auth_group_command.group(name="twofactor", no_args_is_help=True)
+@click.pass_obj
+def twofactor_group_command(_):
+    """Group command for configuring and deactivating methods of two factor authentication."""
+
+
+# -- dds auth twofactor configure -- #
+@twofactor_group_command.command(name="configure")
+def configure():
     """Configure your preferred method of two-factor authentication."""
     try:
         LOG.info("Starting configuration of one-time authentication code method.")
-        auth_method_choice = questionary.select(
+        auth_method_choice: str = questionary.select(
             "Which method would you like to use?", choices=["Email", "Authenticator App", "Cancel"]
         ).ask()
 
@@ -425,12 +470,33 @@ def twofactor():
             LOG.info("Two-factor authentication method not configured.")
             sys.exit(0)
         elif auth_method_choice == "Authenticator App":
-            auth_method = "totp"
+            auth_method: str = "totp"
         elif auth_method_choice == "Email":
-            auth_method = "hotp"
+            auth_method: str = "hotp"
 
         with dds_cli.auth.Auth(authenticate=True, force_renew_token=False) as authenticator:
             authenticator.twofactor(auth_method=auth_method)
+    except (dds_cli.exceptions.DDSCLIException, dds_cli.exceptions.ApiResponseError) as err:
+        LOG.error(err)
+        sys.exit(1)
+
+
+# -- dds auth twofactor configure -- #
+@twofactor_group_command.command(name="deactivate")
+@username_option(
+    required=True, help_message="Super Admins only: The user you wish to deactivate TOTP for."
+)
+@click.pass_obj
+def deactivate(click_ctx, username):
+    """Deactivate another users TOTP.
+
+    Only usable by Super Admins.
+    """
+    try:
+        with dds_cli.auth.Auth(
+            token_path=click_ctx.get("TOKEN_PATH"), force_renew_token=False
+        ) as authenticator:
+            authenticator.deactivate(username=username)
     except (dds_cli.exceptions.DDSCLIException, dds_cli.exceptions.ApiResponseError) as err:
         LOG.error(err)
         sys.exit(1)
@@ -463,8 +529,11 @@ def user_group_command(_):
     type=str,
     help="Super Admins only: The unit which you wish to list the users in.",
 )
+@click.option(
+    "--invites", required=False, is_flag=True, default=False, help="List all current invitations."
+)
 @click.pass_obj
-def list_users(click_ctx, unit):
+def list_users(click_ctx, unit, invites):
     """List Unit Admins and Personnel connected to a specific unit.
 
     \b
@@ -482,7 +551,37 @@ def list_users(click_ctx, unit):
             no_prompt=click_ctx.get("NO_PROMPT", False),
             token_path=click_ctx.get("TOKEN_PATH"),
         ) as lister:
-            lister.list_unit_users(unit=unit)
+            if invites:
+                lister.list_invites(unit=unit, invites=invites)
+            else:
+                lister.list_users(unit=unit)
+
+    except (
+        dds_cli.exceptions.AuthenticationError,
+        dds_cli.exceptions.ApiResponseError,
+        dds_cli.exceptions.ApiRequestError,
+        dds_cli.exceptions.DDSCLIException,
+    ) as err:
+        LOG.error(err)
+        sys.exit(1)
+
+
+# -- dds user find -- #
+# TODO: Move this to dds unit?
+@user_group_command.command(name="find")
+@username_option(
+    required=True, help_message="Super Admins only: The username of the account you want to check."
+)
+@click.pass_obj
+def list_users(click_ctx, username):
+    """Check if a username is registered to an account in the DDS."""
+    try:
+        with dds_cli.account_manager.AccountManager(
+            no_prompt=click_ctx.get("NO_PROMPT", False),
+            token_path=click_ctx.get("TOKEN_PATH"),
+        ) as lister:
+            lister.find_user(user_to_find=username)
+
     except (
         dds_cli.exceptions.AuthenticationError,
         dds_cli.exceptions.ApiResponseError,
@@ -792,13 +891,18 @@ def project_group_command(_):
 # Flags
 @usage_flag(help_message="Show the usage for available projects, in GBHours and cost.")
 @json_flag(help_message="Output project list as json.")  # users, json, tree
+@click.option(
+    "--show-all",
+    is_flag=True,
+    help="List all projects connected to your account (including inactive).",
+)
 @click.pass_context
-def list_projects(ctx, json, sort, usage):
-    """List all projects you have access to in the DDS.
+def list_projects(ctx, json, sort, usage, show_all):
+    """List all active projects you have access to in the DDS.
 
     Calls the `dds ls` function.
     """
-    ctx.invoke(list_projects_and_contents, json=json, sort=sort, usage=usage)
+    ctx.invoke(list_projects_and_contents, json=json, sort=sort, usage=usage, show_all=show_all)
 
 
 # -- dds project create -- #
@@ -1130,6 +1234,35 @@ def delete_project(click_ctx, project: str):
             sys.exit(1)
 
 
+# -- dds project status busy -- #
+@project_status.command(name="busy", no_args_is_help=False)
+# Flags
+@click.option("--show", required=False, show_default=True, is_flag=True, help="Show busy projects")
+@click.pass_obj
+def get_busy_projects(click_ctx, show):
+    """Returns the number of busy projects.
+
+    Use `--show` to see a list of all busy projects.
+    Available to Super Admin only
+    """
+
+    try:
+        with dds_cli.project_status.ProjectBusyStatusManager(
+            no_prompt=click_ctx.get("NO_PROMPT", False),
+            token_path=click_ctx.get("TOKEN_PATH"),
+        ) as getter:
+            getter.get_busy_projects(show=show)
+    except (
+        dds_cli.exceptions.APIError,
+        dds_cli.exceptions.AuthenticationError,
+        dds_cli.exceptions.DDSCLIException,
+        dds_cli.exceptions.ApiResponseError,
+        dds_cli.exceptions.ApiRequestError,
+    ) as err:
+        LOG.error(err)
+        sys.exit(1)
+
+
 # ACCESS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ACCESS #
 @project_group_command.group(name="access")
 @click.pass_obj
@@ -1347,6 +1480,8 @@ def put_data(
         dds_cli.exceptions.UploadError,
         dds_cli.exceptions.ApiResponseError,
         dds_cli.exceptions.ApiRequestError,
+        dds_cli.exceptions.NoKeyError,
+        dds_cli.exceptions.NoDataError,
     ) as err:
         LOG.error(err)
         sys.exit(1)
@@ -1518,6 +1653,7 @@ def get_data(
         dds_cli.exceptions.DDSCLIException,
         dds_cli.exceptions.NoDataError,
         dds_cli.exceptions.DownloadError,
+        dds_cli.exceptions.NoKeyError,
     ) as err:
         LOG.error(err)
         sys.exit(1)
@@ -1726,6 +1862,112 @@ def add_new_motd(click_ctx, message):
         dds_cli.exceptions.ApiResponseError,
         dds_cli.exceptions.ApiRequestError,
         dds_cli.exceptions.DDSCLIException,
+    ) as err:
+        LOG.error(err)
+        sys.exit(1)
+
+
+# -- dds motd ls -- #
+@motd_group_command.command(name="ls", no_args_is_help=False)
+@click.pass_obj
+def list_active_motds(click_ctx):
+    """List all active MOTDs.
+    Only usable by Super Admins.
+    """
+    try:
+        with dds_cli.motd_manager.MotdManager(
+            no_prompt=click_ctx.get("NO_PROMPT", False),
+            token_path=click_ctx.get("TOKEN_PATH"),
+        ) as lister:
+            lister.list_all_active_motds(table=True)
+    except (
+        dds_cli.exceptions.AuthenticationError,
+        dds_cli.exceptions.ApiResponseError,
+        dds_cli.exceptions.ApiRequestError,
+        dds_cli.exceptions.DDSCLIException,
+    ) as err:
+        LOG.error(err)
+        sys.exit(1)
+
+
+# -- dds motd deactivate -- #
+@motd_group_command.command(name="deactivate")
+@click.argument("motd_id", metavar="[MOTD_ID]", nargs=1, type=int, required=True)
+@click.pass_obj
+def deactivate_motd(click_ctx, motd_id):
+    """Deactivate Message Of The Day.
+    Only usable by Super Admins.
+    """
+    try:
+        with dds_cli.motd_manager.MotdManager(
+            no_prompt=click_ctx.get("NO_PROMPT", False),
+            token_path=click_ctx.get("TOKEN_PATH"),
+        ) as deactivator:
+            deactivator.deactivate_motd(motd_id)
+    except (
+        dds_cli.exceptions.AuthenticationError,
+        dds_cli.exceptions.ApiResponseError,
+        dds_cli.exceptions.ApiRequestError,
+        dds_cli.exceptions.DDSCLIException,
+    ) as err:
+        LOG.error(err)
+        sys.exit(1)
+
+
+# -- dds motd send -- #
+@motd_group_command.command(name="send")
+@click.argument("motd_id", metavar="[MOTD_ID]", nargs=1, type=int, required=True)
+@click.pass_obj
+def send_motd(click_ctx, motd_id):
+    """Send motd as email to all users.
+
+    Super Admins only.
+    """
+    try:
+        with dds_cli.motd_manager.MotdManager(
+            no_prompt=click_ctx.get("NO_PROMPT", False),
+            token_path=click_ctx.get("TOKEN_PATH"),
+        ) as sender:
+            sender.send_motd(motd_id=motd_id)
+    except (
+        dds_cli.exceptions.AuthenticationError,
+        dds_cli.exceptions.ApiResponseError,
+        dds_cli.exceptions.ApiRequestError,
+        dds_cli.exceptions.DDSCLIException,
+    ) as err:
+        LOG.error(err)
+        sys.exit(1)
+
+
+##################################################################################################################
+##################################################################################################################
+## MAINTENANCE #################################################################################### MAINTENANCE ##
+##################################################################################################################
+##################################################################################################################
+
+
+@dds_main.command(name="maintenance", no_args_is_help=True)
+@click.argument(
+    "setting", metavar="[ON/OFF]", nargs=1, type=click.Choice(["on", "off"], case_sensitive=False)
+)
+@click.pass_obj
+def set_maintenance_mode(click_ctx, setting):
+    """Activate / Deactivate Maintenance mode.
+
+    Only usable by Super Admins.
+    """
+    try:
+        with dds_cli.maintenance_manager.MaintenanceManager(
+            no_prompt=click_ctx.get("NO_PROMPT", False),
+            token_path=click_ctx.get("TOKEN_PATH"),
+        ) as setter:
+            setter.change_maintenance_mode(setting=setting)
+    except (
+        dds_cli.exceptions.AuthenticationError,
+        dds_cli.exceptions.ApiResponseError,
+        dds_cli.exceptions.ApiRequestError,
+        dds_cli.exceptions.DDSCLIException,
+        dds_cli.exceptions.InvalidMethodError,
     ) as err:
         LOG.error(err)
         sys.exit(1)

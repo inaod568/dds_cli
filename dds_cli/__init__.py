@@ -34,7 +34,7 @@ __all__ = [
 ###############################################################################
 
 # Keep track of all allowed methods
-DDS_METHODS = ["put", "get", "ls", "rm", "create", "add", "delete"]
+DDS_METHODS = ["put", "get", "ls", "rm", "create", "add", "delete", "on", "off"]
 
 # Methods to which a directory created by DDS
 DDS_DIR_REQUIRED_METHODS = ["put", "get"]
@@ -59,10 +59,13 @@ class DDSEndpoint:
     BASE_ENDPOINT_LOCAL = "http://127.0.0.1:5000/api/v1"
     BASE_ENDPOINT_DOCKER = "http://dds_backend:5000/api/v1"
     BASE_ENDPOINT_REMOTE = "https://delivery.scilifelab.se/api/v1"
+    BASE_ENDPOINT_REMOTE_TEST = "https://dds-dev.dckube.scilifelab.se/api/v1"
     if os.getenv("DDS_CLI_ENV") == "development":
         BASE_ENDPOINT = BASE_ENDPOINT_LOCAL
     elif os.getenv("DDS_CLI_ENV") == "docker-dev":
         BASE_ENDPOINT = BASE_ENDPOINT_DOCKER
+    elif os.getenv("DDS_CLI_ENV") == "test-instance":
+        BASE_ENDPOINT = BASE_ENDPOINT_REMOTE_TEST
     else:
         BASE_ENDPOINT = BASE_ENDPOINT_REMOTE
 
@@ -92,13 +95,16 @@ class DDSEndpoint:
 
     # Project specific urls
     PROJ_ACCESS = BASE_ENDPOINT + "/proj/access"
+    PROJ_BUSY_ANY = BASE_ENDPOINT + "/proj/busy/any"
 
     # Listing urls
     LIST_PROJ = BASE_ENDPOINT + "/proj/list"
     LIST_FILES = BASE_ENDPOINT + "/files/list"
     LIST_PROJ_USERS = BASE_ENDPOINT + "/proj/users"
     LIST_UNITS_ALL = BASE_ENDPOINT + "/unit/info/all"
-    LIST_UNIT_USERS = BASE_ENDPOINT + "/unit/users"
+    LIST_USERS = BASE_ENDPOINT + "/users"
+    LIST_INVITED_USERS = BASE_ENDPOINT + "/user/invites"
+    # LIST_USERS_ALL = BASE_ENDPOINT + "/users"
 
     # Deleting urls
     REMOVE_PROJ_CONT = BASE_ENDPOINT + "/proj/rm"
@@ -119,10 +125,20 @@ class DDSEndpoint:
     # Project status updation
     UPDATE_PROJ_STATUS = BASE_ENDPOINT + "/proj/status"
 
-    # Adding new MOTD
-    ADD_NEW_MOTD = BASE_ENDPOINT + "/unit/motd"
+    # MOTD
+    MOTD = BASE_ENDPOINT + "/motd"
+    MOTD_SEND = BASE_ENDPOINT + "/motd/send"
 
-    TIMEOUT = 30
+    # Find user
+    USER_FIND = BASE_ENDPOINT + "/user/find"
+
+    # Deactivate TOTP
+    TOTP_DEACTIVATE = BASE_ENDPOINT + "/user/totp/deactivate"
+
+    # Activate / deactivate Maintenance mode
+    MAINTENANCE = BASE_ENDPOINT + "/maintenance"
+
+    TIMEOUT = 120
 
 
 class FileSegment:

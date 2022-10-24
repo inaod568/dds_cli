@@ -8,10 +8,13 @@
 import logging
 import os
 import pathlib
+import typing
 
 # Installed
 import http
+import time
 import simplejson
+from rich.progress import Progress, SpinnerColumn
 
 # Own modules
 import dds_cli.directory
@@ -55,6 +58,7 @@ class DDSBaseClass:
         totp: str = None,
         no_prompt: bool = False,
         token_path: str = None,
+        allow_group: bool = False,
     ):
         """Initialize Base class for authenticating the user and preparing for DDS action."""
         self.project = project
@@ -72,7 +76,7 @@ class DDSBaseClass:
             # Use user defined destination if any specified
             if self.method in DDS_DIR_REQUIRED_METHODS:
                 default_dir = pathlib.Path(
-                    f"DataDelivery_{dds_cli.timestamp.TimeStamp().timestamp}"
+                    f"DataDelivery_{dds_cli.timestamp.TimeStamp().timestamp}_{self.project}"
                 )
                 if mount_dir:
                     new_directory = mount_dir / default_dir
@@ -98,6 +102,7 @@ class DDSBaseClass:
                 no_prompt=no_prompt,
                 token_path=token_path,
                 totp=totp,
+                allow_group=allow_group,
             )
             self.token = dds_user.token_dict
 
@@ -117,9 +122,13 @@ class DDSBaseClass:
         return self
 
     def __exit__(self, exc_type, exc_value, tb, max_fileerrs: int = 40):
-        """Finish and print out delivery summary."""
-        if self.method in ["put", "get"]:
-            self.__printout_delivery_summary()
+        """Finish and print out delivery summary.
+
+        This is not entered if there's an error during __init__.
+        """
+        if self.method in ["put", "get", "rm"]:
+            if self.method != "rm":
+                self.__printout_delivery_summary()
 
         # Exception is not handled
         if exc_type is not None:
@@ -139,7 +148,23 @@ class DDSBaseClass:
         public = self.__get_key()
 
         # Project private only required for get
-        private = self.__get_key(private=True) if self.method == "get" else None
+        private = None
+        if self.method == "get":
+            # Key derivation on server is slow - display spinner
+            information_to_user = "Preparing for download. This may be slow. Please wait..."
+            with Progress(
+                SpinnerColumn(spinner_name="dots12", style="blue"),
+                "{task.description}",
+                console=dds_cli.utils.stderr_console,
+            ) as spinner:
+                # Start spinner
+                task = spinner.add_task(description=information_to_user)
+                try:
+                    # Get key
+                    private = self.__get_key(private=True)
+                finally:
+                    # Always remove spinner
+                    spinner.remove_task(task)
 
         return private, public
 
@@ -156,15 +181,16 @@ class DDSBaseClass:
         )
 
         if key_type not in project_public:
-            dds_cli.utils.console.print(
-                f"\n:no_entry_sign: Project access denied: No {key_type} key. :no_entry_sign:\n"
-            )
-            os._exit(1)
+            raise exceptions.NoKeyError(f"Project access denied: No {key_type} key.")
 
         return project_public[key_type]
 
     def __printout_delivery_summary(self):
         """Print out the delivery summary if any files were cancelled."""
+        if self.stop_doing:
+            LOG.info(f"{'Upload' if self.method == 'put' else 'Download'} cancelled.\n")
+            return
+
         # TODO: Look into a better summary print out - old deleted for now
         any_failed = self.__collect_all_failed()
         true_failed = [entry for entry in any_failed if entry["message"] != "File already uploaded"]
@@ -237,8 +263,6 @@ class DDSBaseClass:
                 if self.status[file]["cancel"] in [True, "True"]
             }
         )
-
-        LOG.debug(self.filehandler.failed)
 
         # Sort by which directory the files are in
         out_data = self.filehandler.failed

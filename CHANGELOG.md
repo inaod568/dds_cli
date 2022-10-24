@@ -1,6 +1,6 @@
 # Changelog
 
-Please add a _short_ line describing the PR you make, if the PR implements a specific feature or functionality, or refactor. Not needed if you add very small and unnoticable changes.
+Please add a _short_ line describing the PR you make, if the PR implements a specific feature or functionality, or refactor. Not needed if you add very small and unnoticable changes. Not needed when PR includes _only_ tests for already existing feature.
 
 ## Sprint (2021-08-11 - 2021-08-25)
 
@@ -161,3 +161,46 @@ Please add a _short_ line describing the PR you make, if the PR implements a spe
 ## Sprint (2022-05-04 - 2022-05-18)
 
 - Enable use of app for second factor authentication instead of email. ([#259](https://github.com/ScilifelabDataCentre/dds_cli/pull/259))
+
+## Sprint (2022-06-15 - 2022-06-29)
+
+- Display message of the day at top before output ([#498](https://github.com/ScilifelabDataCentre/dds_cli/pull/498))
+- Change token check message for Windows to more user friendly ([#500](https://github.com/ScilifelabDataCentre/dds_cli/pull/500))
+- New command: List all users as Super Admin and find existing users ([#504](https://github.com/ScilifelabDataCentre/dds_cli/pull/504))
+- Add possibility of allowing group access to authenticated session ([#502](https://github.com/ScilifelabDataCentre/dds_cli/pull/502))
+
+## Summer 2022
+
+- Check for DDS_CLI_ENV = "test-instance" in order to allow testing of features before production ([#506](https://github.com/ScilifelabDataCentre/dds_cli/pull/506))
+- List all active motds instead of latest and new command for deactivating motds ([#505](https://github.com/ScilifelabDataCentre/dds_cli/pull/505))
+- New spinner when getting project private ([#510](https://github.com/ScilifelabDataCentre/dds_cli/pull/510))
+
+## Sprint (2022-08-18 - 2022-09-02)
+
+- Change in command: twofactor - activate and deactivate ([#519](https://github.com/ScilifelabDataCentre/dds_cli/pull/519))
+
+## Sprint (2022-09-02 - 2022-09-16)
+
+- Add storage usage information in the Units listing table for Super Admin ([#523](https://github.com/ScilifelabDataCentre/dds_cli/pull/523))
+- Set project as busy / not busy when starting / finishing a upload ([#525](https://github.com/ScilifelabDataCentre/dds_cli/pull/525))
+- Set project as busy / not busy when starting / finishing a download ([#526](https://github.com/ScilifelabDataCentre/dds_cli/pull/526))
+- Set project as busy / not busy when starting / finishing a deletion ([#527](https://github.com/ScilifelabDataCentre/dds_cli/pull/527))
+
+## Sprint (2022-09-16 - 2022-09-30)
+
+- New command: `dds motd send [id]` to send MOTds to users ([#532](https://github.com/ScilifelabDataCentre/dds_cli/pull/532))
+- Add project public_id to the temporary DDS directory to allow deliveries initiated at the same time ([#533](https://github.com/ScilifelabDataCentre/dds_cli/pull/533))
+- New command: `dds maintenance [setting]` to set maintenance mode ([#535](https://github.com/ScilifelabDataCentre/dds_cli/pull/535))
+- New command: `dds project status busy [OPTIONS]` to check for / list busy projects as Super Admin ([#536](https://github.com/ScilifelabDataCentre/dds_cli/pull/536))
+
+## Sprint (2022-09-30 - 2022-10-14)
+
+- Improved message displayed to user when data already uploaded ([#541](https://github.com/ScilifelabDataCentre/dds_cli/pull/541))
+- New message displayed when KeyboardInterrupt used during upload / download ([#542](https://github.com/ScilifelabDataCentre/dds_cli/pull/542))
+- Do not set projects as busy when uploading/downloading/deleting ([#549](https://github.com/ScilifelabDataCentre/dds_cli/pull/549))
+- Command for listing invites ([#547](https://github.com/ScilifelabDataCentre/dds_cli/pull/547))
+
+## Sprint (2022-10-14 - 2022-10-28)
+
+- Limit projects listing to active projects only; a `--show-all` flag can be used for listing all projects, active and inactive ([#556](https://github.com/ScilifelabDataCentre/dds_cli/pull/556))
+- Display name of creator when listing projects ([#557](https://github.com/ScilifelabDataCentre/dds_cli/pull/557))

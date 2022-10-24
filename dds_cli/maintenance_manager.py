@@ -1,4 +1,4 @@
-"""Unit Manager module."""
+"""Maintenance Manager module."""
 
 ####################################################################################################
 # IMPORTS ################################################################################ IMPORTS #
@@ -8,11 +8,6 @@
 import logging
 
 # Installed
-import http
-import requests
-import rich.markup
-from rich.table import Table
-import simplejson
 
 # Own modules
 import dds_cli
@@ -20,6 +15,9 @@ import dds_cli.auth
 import dds_cli.base
 import dds_cli.exceptions
 import dds_cli.utils
+
+# from dds_cli import exceptions
+from dds_cli import DDSEndpoint
 
 
 ####################################################################################################
@@ -34,13 +32,13 @@ LOG = logging.getLogger(__name__)
 ####################################################################################################
 
 
-class UnitManager(dds_cli.base.DDSBaseClass):
-    """Admin class for managing Units."""
+class MaintenanceManager(dds_cli.base.DDSBaseClass):
+    """Admin class for managing system maintenance mode."""
 
     def __init__(
         self,
         authenticate: bool = True,
-        method: str = "ls",
+        method: str = "off",
         no_prompt: bool = False,
         token_path: str = None,
     ):
@@ -53,35 +51,21 @@ class UnitManager(dds_cli.base.DDSBaseClass):
             token_path=token_path,
         )
 
-        # Only methods "add", "delete" and "revoke" can use the AccountManager class
-        if self.method not in ["ls"]:
-            raise dds_cli.exceptions.AuthenticationError(f"Unauthorized method: '{self.method}'")
+        # Only methods "on" and "off" can use the Maintenance class
+        if self.method not in ["on", "off"]:
+            raise dds_cli.exceptions.InvalidMethodError(f"Unauthorized method: '{self.method}'")
 
-    def list_all_units(self):
-        """Get info about all units."""
-        response, _ = dds_cli.utils.perform_request(
-            endpoint=dds_cli.DDSEndpoint.LIST_UNITS_ALL,
-            method="get",
+    def change_maintenance_mode(self, setting) -> None:
+        """Change Maintenance mode."""
+        response_json, _ = dds_cli.utils.perform_request(
+            endpoint=DDSEndpoint.MAINTENANCE,
             headers=self.token,
-            error_message="Failed getting units from API",
+            method="put",
+            json={"state": setting},
+            error_message="Failed setting maintenance mode",
         )
 
-        # Get items from response
-        units, keys = dds_cli.utils.get_required_in_response(
-            keys=["units", "keys"], response=response
+        response_message = response_json.get(
+            "message", "No response. Cannot confirm setting maintenance mode."
         )
-
-        # Sort users according to name
-        units = dds_cli.utils.sort_items(items=units, sort_by="Name")
-
-        # Create table
-        table = dds_cli.utils.create_table(
-            title="Units within the DDS.",
-            columns=keys,
-            rows=units,
-            ints_as_string=False,
-            caption="All units within the DDS.",
-        )
-
-        # Print out table
-        dds_cli.utils.print_or_page(item=table)
+        LOG.info(response_message)

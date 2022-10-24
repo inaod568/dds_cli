@@ -34,6 +34,7 @@ class Auth(base.DDSBaseClass):
         force_renew_token: bool = True,  # Only used if authenticate is True
         token_path: str = None,
         totp: str = None,
+        allow_group: bool = False,
     ):
         """Handle actions regarding session management in DDS."""
         # Initiate DDSBaseClass to authenticate user
@@ -43,6 +44,7 @@ class Auth(base.DDSBaseClass):
             force_renew_token=force_renew_token,
             token_path=token_path,
             totp=totp,
+            allow_group=allow_group,
         )
 
     def check(self):
@@ -75,8 +77,8 @@ class Auth(base.DDSBaseClass):
             LOG.info(
                 "Activating authentication via email, please (re-)enter your username and password:"
             )
-            username = rich.prompt.Prompt.ask("DDS username")
-            password = getpass.getpass(prompt="DDS password: ")
+            username: str = rich.prompt.Prompt.ask("DDS username")
+            password: str = getpass.getpass(prompt="DDS password: ")
 
             if password == "":
                 raise exceptions.AuthenticationError(
@@ -85,9 +87,17 @@ class Auth(base.DDSBaseClass):
 
             response_json, _ = dds_cli.utils.perform_request(
                 endpoint=dds_cli.DDSEndpoint.USER_ACTIVATE_HOTP,
-                headers=None,
                 method="post",
                 auth=(username, password),
             )
 
+        LOG.info(response_json.get("message"))
+
+    def deactivate(self, username: str = None):
+        response_json, _ = dds_cli.utils.perform_request(
+            endpoint=dds_cli.DDSEndpoint.TOTP_DEACTIVATE,
+            headers=self.token,
+            json={"username": username},
+            method="put",
+        )
         LOG.info(response_json.get("message"))
